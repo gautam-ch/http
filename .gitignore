@@ -1,0 +1,8 @@
+target/
+*.class
+files/
+*.log
+.idea/
+*.iml
+.vscode/
+setup_git_history.sh
