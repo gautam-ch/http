@@ -1,5 +1,8 @@
 package server;
 
+import server.http.HttpParser;
+import server.http.HttpRequest;
+
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -10,24 +13,39 @@ import java.nio.charset.StandardCharsets;
 public class Main {
     public static void main(String[] args) {
         int port = 4221;
-        System.out.println("Starting HTTP server on port " + port + "...");
+        System.out.println("HTTP Server listening on port " + port);
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             serverSocket.setReuseAddress(true);
             while (true) {
                 try (Socket clientSocket = serverSocket.accept()) {
-                    System.out.println("Accepted TCP connection from " + clientSocket.getRemoteSocketAddress());
                     BufferedReader reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream(), StandardCharsets.UTF_8));
-                    String requestLine = reader.readLine();
-                    System.out.println("Request: " + requestLine);
+                    HttpRequest request = HttpParser.parse(reader);
+                    if (request == null) continue;
 
                     OutputStream out = clientSocket.getOutputStream();
-                    String response = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
-                    out.write(response.getBytes(StandardCharsets.US_ASCII));
+                    String path = request.getPath();
+                    StringBuilder response = new StringBuilder();
+
+                    if ("/".equals(path)) {
+                        response.append("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+                    } else if ("/user-agent".equals(path)) {
+                        String userAgent = request.getHeader("User-Agent");
+                        if (userAgent == null) userAgent = "";
+                        byte[] body = userAgent.getBytes(StandardCharsets.UTF_8);
+                        response.append("HTTP/1.1 200 OK\r\n")
+                                .append("Content-Type: text/plain\r\n")
+                                .append("Content-Length: ").append(body.length).append("\r\n\r\n")
+                                .append(userAgent);
+                    } else {
+                        response.append("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
+                    }
+
+                    out.write(response.toString().getBytes(StandardCharsets.UTF_8));
                     out.flush();
                 }
             }
         } catch (Exception e) {
-            System.err.println("Server socket exception: " + e.getMessage());
+            System.err.println("Server exception: " + e.getMessage());
         }
     }
 }
