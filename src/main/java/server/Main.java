@@ -3,6 +3,7 @@ package server;
 import server.http.HttpParser;
 import server.http.HttpRequest;
 import server.http.HttpResponse;
+import server.routing.Router;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -13,7 +14,13 @@ import java.nio.charset.StandardCharsets;
 public class Main {
     public static void main(String[] args) {
         int port = 4221;
-        System.out.println("HTTP Server listening on port " + port);
+
+        Router router = new Router();
+        router.get("/", req -> HttpResponse.ok("Core Java HTTP Server is running.\n"));
+        router.get("/echo/*", req -> HttpResponse.ok(req.getPath().substring("/echo/".length())));
+        router.get("/user-agent", req -> HttpResponse.ok(req.getHeader("User-Agent") != null ? req.getHeader("User-Agent") : ""));
+
+        System.out.println("Router initialized. Listening on port " + port + "...");
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             serverSocket.setReuseAddress(true);
             while (true) {
@@ -21,27 +28,12 @@ public class Main {
                     BufferedReader reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream(), StandardCharsets.UTF_8));
                     HttpRequest request = HttpParser.parse(reader);
                     if (request == null) continue;
-
-                    String path = request.getPath();
-                    HttpResponse response;
-
-                    if ("/".equals(path)) {
-                        response = HttpResponse.ok("Core Java HTTP Server is running.\n");
-                    } else if (path.startsWith("/echo/")) {
-                        String echoText = path.substring("/echo/".length());
-                        response = HttpResponse.ok(echoText);
-                    } else if ("/user-agent".equals(path)) {
-                        String userAgent = request.getHeader("User-Agent");
-                        response = HttpResponse.ok(userAgent != null ? userAgent : "");
-                    } else {
-                        response = HttpResponse.notFound("404 Not Found: " + path + "\n");
-                    }
-
+                    HttpResponse response = router.dispatch(request);
                     response.writeTo(clientSocket.getOutputStream());
                 }
             }
         } catch (Exception e) {
-            System.err.println("Server exception: " + e.getMessage());
+            System.err.println("Server error: " + e.getMessage());
         }
     }
 }
