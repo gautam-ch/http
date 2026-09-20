@@ -48,8 +48,29 @@ public class HttpResponse {
     public static HttpResponse ok(String text) {
         return builder().status(HttpStatus.OK).header("Content-Type", "text/plain; charset=UTF-8").body(text).build();
     }
+    public static HttpResponse ok(byte[] data, String contentType) {
+        return builder().status(HttpStatus.OK).header("Content-Type", contentType).body(data).build();
+    }
+    public static HttpResponse json(String json) {
+        return builder().status(HttpStatus.OK).header("Content-Type", "application/json; charset=UTF-8").body(json).build();
+    }
+    public static HttpResponse created(String text) {
+        return builder().status(HttpStatus.CREATED).header("Content-Type", "text/plain; charset=UTF-8").body(text).build();
+    }
     public static HttpResponse notFound(String message) {
         return builder().status(HttpStatus.NOT_FOUND).header("Content-Type", "text/plain; charset=UTF-8").body(message).build();
+    }
+    public static HttpResponse badRequest(String message) {
+        return builder().status(HttpStatus.BAD_REQUEST).header("Content-Type", "text/plain; charset=UTF-8").body(message).build();
+    }
+    public static HttpResponse methodNotAllowed(String allow) {
+        return builder().status(HttpStatus.METHOD_NOT_ALLOWED).header("Allow", allow).header("Content-Type", "text/plain; charset=UTF-8").body("405 Method Not Allowed\n").build();
+    }
+    public static HttpResponse internalServerError(String message) {
+        return builder().status(HttpStatus.INTERNAL_SERVER_ERROR).header("Content-Type", "text/plain; charset=UTF-8").body(message).build();
+    }
+    public static HttpResponse serviceUnavailable(String message) {
+        return builder().status(HttpStatus.SERVICE_UNAVAILABLE).header("Retry-After", "5").header("Content-Type", "text/plain; charset=UTF-8").body(message).build();
     }
 
     public static class Builder {
