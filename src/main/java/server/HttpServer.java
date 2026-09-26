@@ -5,15 +5,21 @@ import server.routing.Router;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketException;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class HttpServer {
+    private static final Logger logger = Logger.getLogger(HttpServer.class.getName());
+
     private final int port;
     private final Router router;
     private final int corePoolSize;
@@ -33,7 +39,8 @@ public class HttpServer {
     }
 
     public void start() throws IOException {
-        running.set(true);
+        if (!running.compareAndSet(false, true)) return;
+
         BlockingQueue<Runnable> workQueue = new ArrayBlockingQueue<>(queueCapacity);
         ThreadFactory threadFactory = new ThreadFactory() {
             private final AtomicInteger count = new AtomicInteger(1);
@@ -43,35 +50,56 @@ public class HttpServer {
             }
         };
 
+        RejectedExecutionHandler rejectionHandler = (task, exec) -> {
+            logger.warning("ThreadPool and bounded queue saturated. Dropping connection with 503.");
+            if (task instanceof ConnectionHandler ch) {
+                ch.rejectWithServiceUnavailable();
+            }
+        };
+
         this.executor = new ThreadPoolExecutor(
                 corePoolSize,
                 maxPoolSize,
                 60L,
                 TimeUnit.SECONDS,
                 workQueue,
-                threadFactory
+                threadFactory,
+                rejectionHandler
         );
+        this.executor.allowCoreThreadTimeOut(true);
 
         this.serverSocket = new ServerSocket(port, 128);
         this.serverSocket.setReuseAddress(true);
-        System.out.printf("HttpServer started on port %d with bounded ThreadPool [Core: %d, Max: %d, Queue: %d]%n",
-                port, corePoolSize, maxPoolSize, queueCapacity);
+        logger.info(String.format("HttpServer started on port %d [Core: %d, Max: %d, Queue: %d]",
+                port, corePoolSize, maxPoolSize, queueCapacity));
 
         while (running.get()) {
             try {
                 Socket clientSocket = serverSocket.accept();
                 executor.execute(new ConnectionHandler(clientSocket, router));
-            } catch (Exception e) {
+            } catch (SocketException e) {
                 if (!running.get()) break;
+                logger.log(Level.SEVERE, "ServerSocket error", e);
+            } catch (Exception e) {
+                if (running.get()) logger.log(Level.SEVERE, "Accept error", e);
             }
         }
     }
 
     public void stop() {
-        running.set(false);
+        if (!running.compareAndSet(true, false)) return;
+        logger.info("Stopping HttpServer on port " + port + "...");
         try {
-            if (serverSocket != null) serverSocket.close();
-            if (executor != null) executor.shutdown();
-        } catch (Exception ignored) {}
+            if (serverSocket != null && !serverSocket.isClosed()) serverSocket.close();
+            if (executor != null) {
+                executor.shutdown();
+                if (!executor.awaitTermination(15, TimeUnit.SECONDS)) {
+                    executor.shutdownNow();
+                }
+            }
+        } catch (Exception e) {
+            logger.log(Level.WARNING, "Error during server shutdown", e);
+        }
+        logger.info("HttpServer stopped successfully.");
     }
 }
